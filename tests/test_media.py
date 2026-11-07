@@ -5,7 +5,13 @@ from pathlib import Path
 import pytest
 from PIL import Image
 
-from app.services.media import convert_static, convert_video
+from app.services.media import convert_static, convert_video, format_size
+
+
+def test_format_size() -> None:
+    assert format_size(512) == "512 B"
+    assert format_size(64 * 1024) == "64 KB"
+    assert format_size(10 * 1024 * 1024) == "10.0 MB"
 
 
 def test_static_conversion_makes_512_webp(tmp_path: Path) -> None:

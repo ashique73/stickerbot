@@ -14,7 +14,7 @@ from app.config import get_settings
 from app.models import Pack, User
 from app.services.emoji import extract_emoji
 from app.services.errors import StickerBotError, UnsupportedMediaError
-from app.services.media import MediaSource, prepare_sticker
+from app.services.media import MediaSource, format_size, prepare_sticker
 from app.services.packs import (
     add_pending_sticker,
     create_pack,
@@ -38,6 +38,7 @@ WELCOME = (
     "<b>Sticker pack bot</b>\n"
     "Create a pack, send images, videos, .tgs files, or existing Telegram stickers, "
     "then publish with /done.\n\n"
+    f"Files up to {format_size(settings.max_media_bytes)}; .tgs files up to 64 KB.\n\n"
     "Caption any media with emoji to set its emoji. Without a caption I use "
     f"{settings.default_emoji}.\n\n"
     "Commands: /newpack, /packs, /current, /done, /undo, /cancel"
@@ -137,6 +138,7 @@ def _document_source(message: Message) -> MediaSource | None:
             file_id=document.file_id,
             format="animated",
             suffix=".tgs",
+            declared_size=document.file_size,
             max_download_bytes=64 * 1024,
         )
     if suffix in {".webm", ".mp4", ".gif"} or mime_type in {"video/webm", "video/mp4", "image/gif"}:
@@ -144,6 +146,8 @@ def _document_source(message: Message) -> MediaSource | None:
             file_id=document.file_id,
             format="video",
             suffix=suffix or ".mp4",
+            declared_size=document.file_size,
+            max_download_bytes=settings.max_media_bytes,
         )
     if suffix in {".webp", ".png", ".jpg", ".jpeg"} or mime_type in {
         "image/webp",
@@ -154,6 +158,8 @@ def _document_source(message: Message) -> MediaSource | None:
             file_id=document.file_id,
             format="static",
             suffix=suffix or ".png",
+            declared_size=document.file_size,
+            max_download_bytes=settings.max_media_bytes,
         )
     return None
 
@@ -174,13 +180,38 @@ def _media_source(message: Message) -> MediaSource | None:
             emoji_override=override,
         )
     if message.photo:
-        return MediaSource(file_id=message.photo[-1].file_id, format="static", suffix=".jpg")
+        photo = message.photo[-1]
+        return MediaSource(
+            file_id=photo.file_id,
+            format="static",
+            suffix=".jpg",
+            declared_size=photo.file_size,
+            max_download_bytes=settings.max_media_bytes,
+        )
     if message.video:
-        return MediaSource(file_id=message.video.file_id, format="video", suffix=".mp4")
+        return MediaSource(
+            file_id=message.video.file_id,
+            format="video",
+            suffix=".mp4",
+            declared_size=message.video.file_size,
+            max_download_bytes=settings.max_media_bytes,
+        )
     if message.animation:
-        return MediaSource(file_id=message.animation.file_id, format="video", suffix=".mp4")
+        return MediaSource(
+            file_id=message.animation.file_id,
+            format="video",
+            suffix=".mp4",
+            declared_size=message.animation.file_size,
+            max_download_bytes=settings.max_media_bytes,
+        )
     if message.video_note:
-        return MediaSource(file_id=message.video_note.file_id, format="video", suffix=".mp4")
+        return MediaSource(
+            file_id=message.video_note.file_id,
+            format="video",
+            suffix=".mp4",
+            declared_size=message.video_note.file_size,
+            max_download_bytes=settings.max_media_bytes,
+        )
     if message.document:
         return _document_source(message)
     return None
@@ -446,6 +477,16 @@ async def handle_media(
     if source is None:
         await message.answer(
             "Unsupported media. Send an image, video, .tgs file, or Telegram sticker."
+        )
+        return
+    if (
+        not source.existing
+        and source.declared_size is not None
+        and source.declared_size > source.max_download_bytes
+    ):
+        await message.answer(
+            f"That file is {format_size(source.declared_size)}. "
+            f"The limit is {format_size(source.max_download_bytes)}."
         )
         return
 

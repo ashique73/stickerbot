@@ -23,6 +23,14 @@ def test_database_url_keeps_other_query_parameters() -> None:
     )
 
 
+def test_media_limit_defaults_to_ten_megabytes() -> None:
+    settings = Settings(
+        bot_token="token",
+        database_url="postgresql://user:pass@example.com/db",
+    )
+    assert settings.max_media_bytes == 10 * 1024 * 1024
+
+
 def test_webhook_url_prefers_explicit_url() -> None:
     settings = Settings(
         bot_token="token",

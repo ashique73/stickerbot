@@ -25,7 +25,16 @@ class MediaSource:
     suffix: str = ""
     existing: bool = False
     emoji_override: list[str] | None = None
+    declared_size: int | None = None
     max_download_bytes: int = DOWNLOAD_MAX_BYTES
+
+
+def format_size(num_bytes: int) -> str:
+    if num_bytes >= 1024 * 1024:
+        return f"{num_bytes / (1024 * 1024):.1f} MB"
+    if num_bytes >= 1024:
+        return f"{num_bytes / 1024:.0f} KB"
+    return f"{num_bytes} B"
 
 
 def convert_static(source: Path, destination: Path) -> None:
@@ -120,12 +129,22 @@ async def download_media(
 ) -> None:
     telegram_file = await call_with_retry(lambda: bot.get_file(file_id))
     if telegram_file.file_size is not None and telegram_file.file_size > max_bytes:
-        raise UnsupportedMediaError("That file is too large for a sticker")
+        raise UnsupportedMediaError(
+            f"That file is {format_size(telegram_file.file_size)}. "
+            f"The limit is {format_size(max_bytes)}."
+        )
+    if not telegram_file.file_path:
+        raise UnsupportedMediaError(
+            "Telegram did not provide a download path for this file; it may be too large."
+        )
     await call_with_retry(
         lambda: bot.download_file(telegram_file.file_path, destination=str(destination))
     )
-    if destination.stat().st_size > max_bytes:
-        raise UnsupportedMediaError("That file is too large for a sticker")
+    downloaded_size = destination.stat().st_size
+    if downloaded_size > max_bytes:
+        raise UnsupportedMediaError(
+            f"That file is {format_size(downloaded_size)}. The limit is {format_size(max_bytes)}."
+        )
 
 
 async def upload_sticker(bot: Bot, user_id: int, path: Path, sticker_format: str) -> str:

@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     public_base_url: str | None = None
     webhook_secret: str | None = None
     default_emoji: str = "⭐"
+    max_media_bytes: int = 10 * 1024 * 1024
     port: int = 8000
     log_level: str = "INFO"
 
