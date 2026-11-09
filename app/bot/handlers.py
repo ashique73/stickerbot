@@ -1,6 +1,8 @@
 import html
 import logging
 import tempfile
+import time
+from datetime import UTC, datetime
 from pathlib import Path
 
 from aiogram import Bot, F, Router
@@ -41,7 +43,7 @@ WELCOME = (
     f"Files up to {format_size(settings.max_media_bytes)}; .tgs files up to 64 KB.\n\n"
     "Caption any media with emoji to set its emoji. Without a caption I use "
     f"{settings.default_emoji}.\n\n"
-    "Commands: /newpack, /packs, /current, /done, /undo, /cancel"
+    "Commands: /newpack, /packs, /current, /done, /undo, /cancel, /ping"
 )
 HELP = (
     "<b>How it works</b>\n"
@@ -49,7 +51,7 @@ HELP = (
     "2. Send images, videos, .tgs files, or Telegram stickers.\n"
     "3. Add emoji in the caption if you want specific ones.\n"
     "4. /done publishes the pack. Packs split automatically at 120 stickers.\n\n"
-    "Other commands: /packs, /current, /undo, /cancel"
+    "Other commands: /packs, /current, /undo, /cancel, /ping"
 )
 
 
@@ -84,6 +86,13 @@ async def _safe_edit(message: Message, text: str, reply_markup=None) -> None:
         await message.edit_text(text, reply_markup=reply_markup)
     except TelegramAPIError:
         pass
+
+
+def _update_age_ms(message: Message, now: datetime) -> int:
+    sent_at = message.date
+    if sent_at.tzinfo is None:
+        sent_at = sent_at.replace(tzinfo=UTC)
+    return max(0, int((now - sent_at).total_seconds() * 1000))
 
 
 async def _send_pack_list(message: Message, session: AsyncSession, user: User) -> None:
@@ -230,6 +239,33 @@ async def cmd_help(message: Message, session: AsyncSession, db_user: User | None
     if db_user is not None:
         await clear_state(session, db_user)
     await message.answer(HELP, reply_markup=main_menu())
+
+
+@router.message(Command("ping"))
+async def cmd_ping(message: Message, bot: Bot) -> None:
+    started = time.perf_counter()
+    received_at = datetime.now(UTC)
+    await bot.get_me()
+    api_ms = (time.perf_counter() - started) * 1000
+    update_age_ms = _update_age_ms(message, received_at)
+
+    send_started = time.perf_counter()
+    sent = await message.answer(
+        f"Pong!\nTelegram API: {api_ms:.0f} ms\nUpdate age: {update_age_ms} ms"
+    )
+    send_ms = (time.perf_counter() - send_started) * 1000
+    total_ms = (time.perf_counter() - started) * 1000
+
+    try:
+        await sent.edit_text(
+            f"Pong!\n"
+            f"Telegram API: {api_ms:.0f} ms\n"
+            f"Send: {send_ms:.0f} ms\n"
+            f"Total: {total_ms:.0f} ms\n"
+            f"Update age: {update_age_ms} ms"
+        )
+    except TelegramAPIError:
+        pass
 
 
 @router.message(Command("cancel"))
